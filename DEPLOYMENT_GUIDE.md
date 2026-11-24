@@ -73,7 +73,7 @@ git remote add origin https://github.com/Micaella159/GlowCart.git
 4. Render will prompt for unsynchronized environment variables. Set:
    - API `DATABASE_URL`: the Neon pooled URL (secret; leave `sslmode=require`).
    - API `FRONTEND_URL`: the exact HTTPS origin Render assigns to the static site.
-   - Frontend `VITE_API_BASE_URL`: `https://<actual-api-host>/api/v1`.
+   - Frontend `VITE_API_BASE_URL` is configured in `render.yaml` as `https://glowcart-api-slg5.onrender.com/api/v1`; confirm the static site's Render environment uses this value.
 5. Deploy/redeploy after setting the variables. Do not use example or guessed Render hostnames; copy the real service URLs from the Render dashboard.
 6. In the API service's **Shell**, run `npm run db:migrate` once after `DATABASE_URL` is set. This creates the products table before catalog requests are tested.
 

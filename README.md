@@ -83,9 +83,9 @@ There is no backend automated test suite yet. Apply the schema with `npm run db:
 
 - `DATABASE_URL` on the API service: Neon pooled connection string.
 - `FRONTEND_URL` on the API service: the exact frontend origin assigned by Render.
-- `VITE_API_BASE_URL` on the static site: `https://<actual-api-host>/api/v1`.
+- `VITE_API_BASE_URL` on the static site is configured in `render.yaml` as `https://glowcart-api-slg5.onrender.com/api/v1`.
 
-The last two URLs are prompted as unsynchronized Blueprint variables; use the actual URLs shown in Render. Do not put database credentials in the frontend. Follow [`DEPLOYMENT_GUIDE.md`](./DEPLOYMENT_GUIDE.md) for deployment steps. No GitHub push or Render deployment has been performed by this project setup.
+The API `FRONTEND_URL` is prompted as an unsynchronized Blueprint variable; use the exact frontend URL shown in Render. Do not put database credentials in the frontend. Follow [`DEPLOYMENT_GUIDE.md`](./DEPLOYMENT_GUIDE.md) for deployment steps. No GitHub push or Render deployment has been performed by this project setup.
 
 ## Git safety
 

@@ -11,9 +11,7 @@ const localProductImages = {
 
 export async function getProducts({ signal } = {}) {
   const response = await request('/products', { signal })
-  const products = Array.isArray(response.data)
-    ? response.data
-    : response.data?.products
+  const products = response?.data?.products ?? response?.data
 
   if (!Array.isArray(products)) {
     throw new Error('The products API returned an unexpected response format.')
