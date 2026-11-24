@@ -154,7 +154,7 @@ Request:
 }
 ```
 
-`limit` is optional and defaults to 3; valid values are integers from 1 to 5. Prompts must be 5 to 500 characters. The API sends the prompt and the current in-stock catalog to OpenAI using backend-only `OPENAI_API_KEY` and `OPENAI_MODEL` configuration. Do not include sensitive personal information in a discovery prompt.
+`limit` is optional and defaults to 3; valid values are integers from 1 to 5. Prompts must be 5 to 500 characters. The API sends the prompt and current in-stock catalog to the Gemini Developer API using backend-only `GEMINI_API_KEY` and `GEMINI_MODEL` configuration. The default model is `gemini-3.5-flash-lite`; Google’s free-tier quotas apply. Free-tier content may be used to improve Google products, so do not include sensitive personal information in a discovery prompt.
 
 Returns `200` with database-verified products:
 
@@ -185,8 +185,9 @@ The model may return product IDs and reasons only. The API checks IDs against ac
 If the catalog has no in-stock products, the API returns an empty `recommendations` array.
 
 - Invalid request: `400 INVALID_DISCOVERY_PROMPT` or `INVALID_DISCOVERY_LIMIT`.
-- Missing `OPENAI_API_KEY`: `503 AI_NOT_CONFIGURED`.
-- Provider outage: `503 AI_PROVIDER_UNAVAILABLE`; timeout: `504 AI_PROVIDER_TIMEOUT`.
+- Missing `GEMINI_API_KEY`: `503 AI_NOT_CONFIGURED`.
+- Provider quota exhausted: `503 AI_PROVIDER_QUOTA_EXCEEDED`.
+- Provider outage or rejected provider request: `503 AI_PROVIDER_UNAVAILABLE`; timeout: `504 AI_PROVIDER_TIMEOUT`.
 - Invalid provider output: `502 AI_INVALID_RESPONSE`.
 - More than 10 requests per minute: `429 AI_RATE_LIMITED`.
 
@@ -287,7 +288,7 @@ Every request gets an `X-Request-ID` header; the same identifier appears in resp
 - `DATABASE_URL`: Neon pooled PostgreSQL URL, configured only in the backend environment. Keep the generated `sslmode=require` query option.
 - `AUTH_TOKEN_SECRET`: backend-only random secret (at least 32 characters) used to HMAC session tokens before storing them.
 - `AUTH_SESSION_TTL_HOURS`: optional integer from 1 to 720; defaults to 168.
-- `OPENAI_API_KEY`: backend-only OpenAI API key. Without it, discovery returns `503 AI_NOT_CONFIGURED`.
-- `OPENAI_MODEL`: optional OpenAI chat model; defaults to `gpt-4o-mini`.
+- `GEMINI_API_KEY`: backend-only Gemini API key. Without it, discovery returns `503 AI_NOT_CONFIGURED`.
+- `GEMINI_MODEL`: optional Gemini model; defaults to `gemini-3.5-flash-lite`.
 
 Run `npm run db:migrate` from `backend/` to apply reviewed numbered SQL migrations, including authentication and orders. Migration `003_create_orders_and_order_items.sql` is pending approval; the runner does not modify existing products.

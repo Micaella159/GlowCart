@@ -1,14 +1,10 @@
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const { once } = require("node:events");
-const express = require("express");
 const bcrypt = require("bcryptjs");
 const { test } = require("node:test");
-const createAuthRouter = require("../src/routes/authRoutes");
-const createAIRouter = require("../src/routes/aiRoutes");
-const createOrderRouter = require("../src/routes/orderRoutes");
+const { createApp } = require("../server");
 const { hashSessionToken } = require("../src/utils/sessionToken");
-const { errorHandler } = require("../src/utils/httpError");
 
 const TEST_SECRET = "test-only-auth-secret-0123456789abcdef";
 const PRODUCT_ID = "10000000-0000-4000-8000-000000000001";
@@ -292,22 +288,14 @@ function createOrderFakePool() {
   };
 }
 
-async function startTestServer({ pool, env, fetchImpl, orderRoutes = false }) {
-  const app = express();
-  app.use((req, res, next) => {
-    req.requestId = crypto.randomUUID();
-    next();
-  });
-  app.use(express.json());
-  app.use("/api/v1/auth", createAuthRouter({ pool, env }));
-  app.use("/api/v1/ai", createAIRouter({ pool, env, fetchImpl }));
-  if (orderRoutes) app.use("/api/v1", createOrderRouter({ pool, env }));
-  app.use(errorHandler);
-
+async function startTestServer({ pool, env, fetchImpl }) {
+  const app = createApp({ database: pool, env, fetchImpl });
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
+  const origin = `http://127.0.0.1:${server.address().port}`;
   return {
-    baseUrl: `http://127.0.0.1:${server.address().port}/api/v1`,
+    origin,
+    baseUrl: `${origin}/api/v1`,
     close: () => new Promise((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     }),
@@ -336,6 +324,34 @@ function checkoutPayload(quantity = 2) {
     items: [{ productId: PRODUCT_ID, quantity }],
   };
 }
+
+test("the Express app mounts authentication at the exact /api/v1/auth paths", async (t) => {
+  const server = await startTestServer({
+    pool: createFakePool(),
+    env: { AUTH_TOKEN_SECRET: TEST_SECRET },
+  });
+  t.after(server.close);
+
+  const currentUser = await fetch(`${server.origin}/api/v1/auth/me`);
+  assert.equal(currentUser.status, 401);
+  assert.equal((await currentUser.json()).error.code, "AUTHENTICATION_REQUIRED");
+
+  const registration = await postJson(`${server.origin}/api/v1/auth/register`, {
+    name: "Test User",
+    email: "invalid",
+    password: "correct-horse-battery",
+  });
+  assert.equal(registration.status, 400);
+  assert.equal((await registration.json()).error.code, "INVALID_EMAIL");
+
+  const login = await postJson(`${server.origin}/api/v1/auth/login`, {});
+  assert.equal(login.status, 400);
+  assert.equal((await login.json()).error.code, "INVALID_CREDENTIALS");
+
+  const logout = await postJson(`${server.origin}/api/v1/auth/logout`, {});
+  assert.equal(logout.status, 401);
+  assert.equal((await logout.json()).error.code, "AUTHENTICATION_REQUIRED");
+});
 
 test("auth registration, duplicate protection, login, me, and logout", async (t) => {
   const pool = createFakePool();
@@ -426,18 +442,27 @@ test("AI discovery handles missing credentials, invalid prompts, and database-ve
   let providerCalls = 0;
   const fetchImpl = async (url, options) => {
     providerCalls += 1;
-    assert.equal(url, "https://api.openai.com/v1/chat/completions");
-    assert.equal(options.headers.Authorization, "Bearer test-provider-key");
+    assert.equal(
+      url,
+      "https://generativelanguage.googleapis.com/v1beta/models/test-model:generateContent",
+    );
+    assert.equal(options.method, "POST");
+    assert.equal(options.headers["x-goog-api-key"], "test-provider-key");
+    assert.equal(options.headers.Authorization, undefined);
     const request = JSON.parse(options.body);
-    const userMessage = JSON.parse(request.messages[1].content);
+    const userMessage = JSON.parse(request.contents[0].parts[0].text);
     assert.equal(userMessage.catalog[0].price, product.price);
+    assert.equal(userMessage.goal, "A gentle moisturizer for dry skin");
+    assert.equal(request.generationConfig.responseMimeType, "application/json");
+    assert.deepEqual(request.generationConfig.responseSchema.required, ["recommendations"]);
     return {
       ok: true,
       async json() {
         return {
-          choices: [{
-            message: {
-              content: JSON.stringify({
+          candidates: [{
+            content: {
+              parts: [{
+                text: JSON.stringify({
                 recommendations: [{
                   id: PRODUCT_ID,
                   reason: "This moisturizer fits the stated daily skincare goal.",
@@ -445,6 +470,7 @@ test("AI discovery handles missing credentials, invalid prompts, and database-ve
                   stock: 9999,
                 }],
               }),
+              }],
             },
           }],
         };
@@ -463,7 +489,7 @@ test("AI discovery handles missing credentials, invalid prompts, and database-ve
 
   const server = await startTestServer({
     pool,
-    env: { OPENAI_API_KEY: "test-provider-key", OPENAI_MODEL: "test-model" },
+    env: { GEMINI_API_KEY: "test-provider-key", GEMINI_MODEL: "test-model" },
     fetchImpl,
   });
   t.after(server.close);
@@ -502,7 +528,7 @@ test("AI discovery returns a safe error when the provider fails", async (t) => {
       stock: 12,
       is_active: true,
     }]),
-    env: { OPENAI_API_KEY: "test-provider-key" },
+    env: { GEMINI_API_KEY: "test-provider-key" },
     fetchImpl: async () => ({ ok: false, status: 429 }),
   });
   t.after(server.close);
@@ -511,7 +537,53 @@ test("AI discovery returns a safe error when the provider fails", async (t) => {
     prompt: "A gentle moisturizer for dry skin",
   });
   assert.equal(response.status, 503);
-  assert.equal((await response.json()).error.code, "AI_PROVIDER_UNAVAILABLE");
+  assert.equal((await response.json()).error.code, "AI_PROVIDER_QUOTA_EXCEEDED");
+});
+
+test("AI discovery handles timeouts and malformed Gemini output", async (t) => {
+  const pool = createFakePool([{
+    id: PRODUCT_ID,
+    name: "Daily Moisturizer",
+    description: "",
+    price: "349.00",
+    imageUrl: null,
+    category: "Skincare",
+    stock: 12,
+    is_active: true,
+  }]);
+
+  const timeoutServer = await startTestServer({
+    pool,
+    env: { GEMINI_API_KEY: "test-provider-key" },
+    fetchImpl: async () => {
+      const error = new Error("request aborted");
+      error.name = "AbortError";
+      throw error;
+    },
+  });
+  t.after(timeoutServer.close);
+  const timeoutResponse = await postJson(`${timeoutServer.baseUrl}/ai/discovery`, {
+    prompt: "A gentle moisturizer for dry skin",
+  });
+  assert.equal(timeoutResponse.status, 504);
+  assert.equal((await timeoutResponse.json()).error.code, "AI_PROVIDER_TIMEOUT");
+
+  const invalidServer = await startTestServer({
+    pool,
+    env: { GEMINI_API_KEY: "test-provider-key" },
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return { candidates: [{ content: { parts: [{ text: "not JSON" }] } }] };
+      },
+    }),
+  });
+  t.after(invalidServer.close);
+  const invalidResponse = await postJson(`${invalidServer.baseUrl}/ai/discovery`, {
+    prompt: "A gentle moisturizer for dry skin",
+  });
+  assert.equal(invalidResponse.status, 502);
+  assert.equal((await invalidResponse.json()).error.code, "AI_INVALID_RESPONSE");
 });
 
 test("COD checkout validates stock, is idempotent, and restricts order ownership", async (t) => {
@@ -519,7 +591,6 @@ test("COD checkout validates stock, is idempotent, and restricts order ownership
   const server = await startTestServer({
     pool,
     env: { AUTH_TOKEN_SECRET: TEST_SECRET },
-    orderRoutes: true,
   });
   t.after(server.close);
 

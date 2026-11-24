@@ -76,9 +76,9 @@ git remote add origin https://github.com/Micaella159/GlowCart.git
    - API `DATABASE_URL`: the Neon pooled URL (secret; leave `sslmode=require`).
    - API `FRONTEND_URL`: the exact HTTPS origin Render assigns to the static site.
    - API `AUTH_TOKEN_SECRET`: a newly generated random secret of at least 32 characters. Keep it only in Render's backend environment.
-   - API `OPENAI_API_KEY`: an OpenAI API key stored only in the backend environment. Beauty AI returns a clear configuration error until this is set.
+   - API `GEMINI_API_KEY`: a Gemini API key stored only in the backend environment. Beauty AI returns a clear configuration error until this is set.
    - API `AUTH_SESSION_TTL_HOURS`: optional; defaults to `168`.
-   - API `OPENAI_MODEL`: optional; defaults to `gpt-4o-mini`.
+   - API `GEMINI_MODEL`: optional; defaults to `gemini-3.5-flash-lite`. Google AI Studio free-tier quotas and data-use terms apply.
 5. In the static site's build environment, set or confirm `VITE_API_BASE_URL=https://glowcart-api-slg5.onrender.com/api/v1`. It is public configuration, not a secret.
 6. After the updated API code is deployed, run `npm run db:migrate` in the API service's **Shell**. Review the migration first; it adds `users` and `auth_sessions` only and does not change product rows.
 7. Redeploy/rebuild the frontend after setting its build-time variable. Confirm the API health check and the actual service URLs in the Render dashboard; do not use guessed frontend hostnames.

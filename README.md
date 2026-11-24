@@ -64,8 +64,10 @@ Backend variables are documented in [`backend/.env.example`](./backend/.env.exam
 - `DATABASE_URL` (Neon pooled PostgreSQL URL; backend only)
 - `AUTH_TOKEN_SECRET` (backend-only random secret, at least 32 characters)
 - `AUTH_SESSION_TTL_HOURS` (optional; defaults to 168, maximum 720)
-- `OPENAI_API_KEY` (backend-only; optional until Beauty AI is enabled)
-- `OPENAI_MODEL` (optional; defaults to `gpt-4o-mini`)
+- `GEMINI_API_KEY` (backend-only Gemini API key; required for Beauty AI)
+- `GEMINI_MODEL` (optional; defaults to `gemini-3.5-flash-lite`, with Google AI Studio free-tier quotas)
+
+Create and manage the Gemini API key in Google AI Studio, then add it only to `backend/.env` locally or the Render API service environment. Do not put it in a `VITE_*` variable. Google’s Gemini free-tier terms may allow submitted content to be used to improve Google products; users should not enter sensitive personal information.
 
 Frontend example: [`.env.example`](./.env.example). `VITE_API_BASE_URL` is public and must contain only the API base URL.
 
