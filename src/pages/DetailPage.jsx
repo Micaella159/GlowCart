@@ -1,6 +1,7 @@
 import { Link, useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { getProduct, getProductImage, getProductName, getProductPrice } from '../api/products.js'
+import { getProduct, getProductName, getProductPrice } from '../api/products.js'
+import ProductImage from '../components/ProductImage.jsx'
 import { useCart } from '../hooks/useCart.js'
 
 export default function DetailPage() {
@@ -35,10 +36,9 @@ export default function DetailPage() {
     )
   }
 
-  const image = getProductImage(product)
   return (
     <article className="detail-card">
-      {image && <img className="detail-image" src={image} alt={getProductName(product)} />}
+      <ProductImage product={product} className="detail-image" loading="eager" />
       <p>{product.category || 'Beauty'}</p>
       <h2>{getProductName(product)}</h2>
       <strong>

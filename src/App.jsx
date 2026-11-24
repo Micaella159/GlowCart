@@ -11,6 +11,9 @@ const HomePage = lazy(() => import('./pages/HomePage.jsx'))
 const ProductsPage = lazy(() => import('./pages/ProductsPage.jsx'))
 const DetailPage = lazy(() => import('./pages/DetailPage.jsx'))
 const CartPage = lazy(() => import('./pages/CartPage.jsx'))
+const CheckoutPage = lazy(() => import('./pages/CheckoutPage.jsx'))
+const OrdersPage = lazy(() => import('./pages/OrdersPage.jsx'))
+const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage.jsx'))
 const LoginPage = lazy(() => import('./pages/LoginPage.jsx'))
 const RegisterPage = lazy(() => import('./pages/RegisterPage.jsx'))
 const BeautyAIPage = lazy(() => import('./pages/BeautyAIPage.jsx'))
@@ -42,12 +45,12 @@ function AppRoutes() {
             <Route path="products" element={<ProductsPage />} />
             <Route path="products/:id" element={<DetailPage />} />
             <Route path="cart" element={<CartPage />} />
-            <Route path="checkout" element={<UnavailablePage kind="checkout" />} />
             <Route path="payment/success" element={<UnavailablePage kind="success" />} />
             <Route path="payment/cancelled" element={<UnavailablePage kind="cancelled" />} />
             <Route element={<ProtectedRoute />}>
-              <Route path="orders" element={<UnavailablePage kind="orders" />} />
-              <Route path="orders/:id" element={<UnavailablePage kind="orders" />} />
+              <Route path="checkout" element={<CheckoutPage />} />
+              <Route path="orders" element={<OrdersPage />} />
+              <Route path="orders/:id" element={<OrderDetailPage />} />
             </Route>
             <Route path="login" element={<LoginPage />} />
             <Route path="register" element={<RegisterPage />} />

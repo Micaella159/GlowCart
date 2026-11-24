@@ -190,6 +190,86 @@ If the catalog has no in-stock products, the API returns an empty `recommendatio
 - Invalid provider output: `502 AI_INVALID_RESPONSE`.
 - More than 10 requests per minute: `429 AI_RATE_LIMITED`.
 
+## Cash on Delivery checkout and orders
+
+Checkout and order endpoints require a valid bearer session from the authentication endpoints. The server verifies current product activity and stock in Neon, calculates prices from the database, and decrements stock in the same transaction that stores the order. The client must not send prices or totals.
+
+### `POST /api/v1/checkout`
+
+Requires an `Idempotency-Key` header containing a UUID. A retry with the same user, key, and normalized request returns the original order; reusing the key with different details returns `409 IDEMPOTENCY_KEY_REUSED`.
+
+Request:
+
+```json
+{
+  "customer": {
+    "name": "Ava Santos",
+    "phone": "+639171234567",
+    "address": "123 Sample Street, Quezon City"
+  },
+  "paymentMethod": "COD",
+  "items": [
+    { "productId": "00000000-0000-4000-8000-000000000001", "quantity": 2 }
+  ]
+}
+```
+
+The only accepted payment method is `COD`. Item quantities must be whole numbers from 1 to 99; an order may contain 1 to 50 distinct products. Customer name is limited to 80 characters, phone to 7-20 characters, and address to 10-500 characters.
+
+Returns `201` for a new order and `200` for an idempotent retry:
+
+```json
+{
+  "success": true,
+  "data": {
+    "order": {
+      "id": "order-uuid",
+      "customer": {
+        "name": "Ava Santos",
+        "phone": "+639171234567",
+        "address": "123 Sample Street, Quezon City"
+      },
+      "items": [
+        {
+          "id": "item-uuid",
+          "productId": "00000000-0000-4000-8000-000000000001",
+          "name": "Hydrating Face Serum",
+          "imageUrl": "/products/serum.jpg",
+          "unitPrice": "299.00",
+          "quantity": 2,
+          "lineTotal": "598.00"
+        }
+      ],
+      "subtotal": "598.00",
+      "total": "598.00",
+      "paymentMethod": "COD",
+      "paymentStatus": "pending",
+      "orderStatus": "pending",
+      "createdAt": "timestamp"
+    }
+  },
+  "meta": { "requestId": "request-uuid", "idempotentReplay": false }
+}
+```
+
+No shipping fee is currently configured, so `total` equals `subtotal`. Payment remains `pending`; submitting checkout does not mark an order as paid.
+
+- Missing/invalid authentication: `401 AUTHENTICATION_REQUIRED` or `INVALID_SESSION`.
+- Invalid input or idempotency key: `400` with a specific `INVALID_*` error code.
+- Product missing or inactive: `404 PRODUCT_NOT_FOUND`.
+- Insufficient stock or idempotency key reused for different details: `409`.
+- Database unavailable: `503 CHECKOUT_UNAVAILABLE`.
+
+### `GET /api/v1/orders`
+
+Returns the authenticated customer's most recent 100 orders, with their saved item names, image paths, and price snapshots. The response is `{ "success": true, "data": { "orders": [...] }, "meta": { "count": 1, "requestId": "request-uuid" } }`. Other users' orders are never included.
+
+### `GET /api/v1/orders/:id`
+
+Returns one order and its items only when it belongs to the authenticated customer. Invalid UUID returns `400 INVALID_ORDER_ID`; an unknown order or one owned by another user returns `404 ORDER_NOT_FOUND`.
+
+Migration `003_create_orders_and_order_items.sql` adds the order tables and indexes without inserting sample orders or changing existing products. Review it before applying the migration runner.
+
 ## Other errors
 
 - Unknown API path: `404 ENDPOINT_NOT_FOUND`.
@@ -210,4 +290,4 @@ Every request gets an `X-Request-ID` header; the same identifier appears in resp
 - `OPENAI_API_KEY`: backend-only OpenAI API key. Without it, discovery returns `503 AI_NOT_CONFIGURED`.
 - `OPENAI_MODEL`: optional OpenAI chat model; defaults to `gpt-4o-mini`.
 
-Run `npm run db:migrate` from `backend/` to add the authentication tables. The migration runner records numbered SQL migrations and does not modify existing products.
+Run `npm run db:migrate` from `backend/` to apply reviewed numbered SQL migrations, including authentication and orders. Migration `003_create_orders_and_order_items.sql` is pending approval; the runner does not modify existing products.

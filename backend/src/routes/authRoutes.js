@@ -4,9 +4,10 @@ const bcrypt = require("bcryptjs");
 const { rateLimit } = require("express-rate-limit");
 const { createHttpError } = require("../utils/httpError");
 const { stripControlCharacters } = require("../utils/sanitizeText");
+const { getSessionTokenSecret, hashSessionToken } = require("../utils/sessionToken");
+const createAuthenticate = require("../middleware/authenticate");
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const TOKEN_PATTERN = /^[A-Za-z0-9_-]{40,}$/;
 const BCRYPT_ROUNDS = 12;
 
 function createAuthRouter({ pool, env = process.env }) {
@@ -30,18 +31,9 @@ function createAuthRouter({ pool, env = process.env }) {
   });
 
   function getAuthSettings() {
-    const tokenSecret = typeof env.AUTH_TOKEN_SECRET === "string"
-      ? env.AUTH_TOKEN_SECRET
-      : "";
+    const tokenSecret = getSessionTokenSecret(env);
     const sessionTtlHours = Number(env.AUTH_SESSION_TTL_HOURS || 168);
 
-    if (Buffer.byteLength(tokenSecret, "utf8") < 32) {
-      throw createHttpError(
-        503,
-        "AUTH_NOT_CONFIGURED",
-        "Authentication is not configured. Set AUTH_TOKEN_SECRET on the backend.",
-      );
-    }
     if (!Number.isInteger(sessionTtlHours) || sessionTtlHours < 1 || sessionTtlHours > 720) {
       throw createHttpError(
         503,
@@ -51,10 +43,6 @@ function createAuthRouter({ pool, env = process.env }) {
     }
 
     return { tokenSecret, sessionTtlHours };
-  }
-
-  function hashToken(token, secret) {
-    return crypto.createHmac("sha256", secret).update(token).digest("hex");
   }
 
   function validateRegistration(body) {
@@ -107,51 +95,9 @@ function createAuthRouter({ pool, env = process.env }) {
     await connection.query(
       `INSERT INTO public.auth_sessions (token_hash, user_id, expires_at)
        VALUES ($1, $2, $3)`,
-      [hashToken(token, settings.tokenSecret), userId, expiresAt],
+      [hashSessionToken(token, settings.tokenSecret), userId, expiresAt],
     );
     return { token, expiresAt };
-  }
-
-  function requireAuthentication() {
-    return async (req, res, next) => {
-      const settings = getAuthSettings();
-      const authorization = req.get("authorization") || "";
-      const match = /^Bearer ([A-Za-z0-9_-]+)$/.exec(authorization);
-
-      if (!match || !TOKEN_PATTERN.test(match[1])) {
-        throw createHttpError(401, "AUTHENTICATION_REQUIRED", "Sign in to continue.");
-      }
-
-      let result;
-      try {
-        result = await pool.query(
-          `SELECT u.id, u.email, u.name, s.expires_at
-           FROM public.auth_sessions AS s
-           JOIN public.users AS u ON u.id = s.user_id
-           WHERE s.token_hash = $1 AND s.expires_at > NOW()`,
-          [hashToken(match[1], settings.tokenSecret)],
-        );
-      } catch (error) {
-        throw createHttpError(
-          503,
-          "AUTH_UNAVAILABLE",
-          "Authentication is temporarily unavailable.",
-          error,
-        );
-      }
-
-      if (result.rowCount !== 1) {
-        throw createHttpError(401, "INVALID_SESSION", "Your session is invalid or expired. Sign in again.");
-      }
-
-      req.user = {
-        id: result.rows[0].id,
-        email: result.rows[0].email,
-        name: result.rows[0].name,
-      };
-      req.authTokenHash = hashToken(match[1], settings.tokenSecret);
-      next();
-    };
   }
 
   router.post("/register", authRateLimit, async (req, res) => {
@@ -256,7 +202,9 @@ function createAuthRouter({ pool, env = process.env }) {
     });
   });
 
-  router.get("/me", requireAuthentication(), (req, res) => {
+  const authenticate = createAuthenticate({ pool, env });
+
+  router.get("/me", authenticate, (req, res) => {
     res.json({
       success: true,
       data: { user: req.user },
@@ -264,7 +212,7 @@ function createAuthRouter({ pool, env = process.env }) {
     });
   });
 
-  router.post("/logout", requireAuthentication(), async (req, res) => {
+  router.post("/logout", authenticate, async (req, res) => {
     try {
       await pool.query("DELETE FROM public.auth_sessions WHERE token_hash = $1", [req.authTokenHash]);
     } catch (error) {

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { Minus, Plus, Trash2 } from 'lucide-react'
 import { useCart } from '../hooks/useCart.js'
 import { getProductId, getProductName, getProductPrice } from '../api/products.js'
+import ProductImage from '../components/ProductImage.jsx'
 import { useNetworkStatus } from '../hooks/useNetworkStatus.js'
 
 export default function CartPage() {
@@ -25,7 +26,7 @@ export default function CartPage() {
             const id = getProductId(product)
             return (
               <article className="cart-item" key={id}>
-                <div className="cart-emoji" aria-hidden="true">🌷</div>
+                <ProductImage product={product} className="cart-product-image" />
                 <div className="cart-details">
                   <h3>{getProductName(product)}</h3>
                   <strong>₱{getProductPrice(product).toFixed(2)}</strong>

@@ -5,11 +5,12 @@ GlowCart is a mobile-first React/Vite beauty-shopping PWA. Its browser app talks
 ## Features
 
 - Product catalog with search, category filters, product details, local product-image fallbacks, and loading/error/empty states.
-- Shopping cart saved in browser storage, with quantity updates and item removal. The subtotal is an estimate; there is no server-side checkout.
+- Shopping cart saved in browser storage, with quantity updates and item removal. Authenticated customers can place idempotent Cash on Delivery orders, then view order history and details.
+- Checkout totals and stock are verified transactionally against Neon; submitted orders remain unpaid (`pending`) until handled outside the application.
 - Responsive navigation, online/offline indicator, web app manifest, icons, and Workbox caching for the app shell, public product responses, and images.
 - Express endpoints for API health, product listing, and product lookup.
 
-Login, registration, orders, checkout/payment, and AI discovery are not implemented. Their routes explain the limitation and do not simulate successful transactions.
+Registration, login/logout, authenticated customer order history, COD checkout, and backend-backed Beauty AI discovery use the existing API. Online card payments and payment processing are not implemented.
 
 ## Technologies and structure
 
@@ -49,7 +50,7 @@ npm run dev
 
 The local Vite proxy forwards `/api` to `http://localhost:5000`. The frontend defaults to `/api/v1`; set `VITE_API_BASE_URL` in a local frontend `.env.local` only when using a different API origin. Never put `DATABASE_URL` in a `VITE_*` variable.
 
-The migration creates the products table and migration ledger but does not insert, copy, or delete product records. If moving existing records, export/import and verify them separately before switching over. Keep the old database until the transfer is checked.
+The numbered migrations create the products, authentication, and order tables and migration ledger. They do not insert, copy, or delete product records or create fake orders. Review pending migration SQL before running the migration command. If moving existing records, export/import and verify them separately before switching over. Keep the old database until the transfer is checked.
 
 The optional product seed is separate from schema migrations at `backend/src/db/seeds/001_products.sql`. Review it before running; its IDs make repeated execution skip those same rows.
 
@@ -79,7 +80,7 @@ npm run lint
 npm run build
 ```
 
-Run backend tests from `backend/` with `npm test`. Apply database schema changes with `npm run db:migrate`; this also creates authentication tables while preserving the existing products and records. Verify the database with `GET /api/v1/health` and the catalog with `GET /api/v1/products`.
+Run backend tests from `backend/` with `npm test`. After reviewing migration `003_create_orders_and_order_items.sql` and explicitly approving its application, run `npm run db:migrate` from `backend/`; it preserves existing product records. Verify the database with `GET /api/v1/health` and the catalog with `GET /api/v1/products`.
 
 ## Render deployment
 

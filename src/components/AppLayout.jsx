@@ -29,6 +29,10 @@ export default function AppLayout() {
     navigate('/login', { replace: true })
   }
 
+  const items = navItems.map(item => item.label === 'Account' && isAuthenticated
+    ? { ...item, to: '/orders', label: 'Orders' }
+    : item)
+
   return (
     <div className="app">
       <header className="top-header">
@@ -54,7 +58,7 @@ export default function AppLayout() {
       <main className="page-content"><Outlet /></main>
       <footer className="app-footer">GlowCart · Your Beauty, Your Glow</footer>
       <nav className="bottom-nav" aria-label="Main navigation">
-        {navItems.map(({ to, label, icon: Icon, end }) => (
+        {items.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
