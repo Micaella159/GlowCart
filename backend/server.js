@@ -5,6 +5,8 @@ require("dotenv").config();
 
 const pool = require("./src/config/db");
 const productRoutes = require("./src/routes/productRoutes");
+const createAuthRouter = require("./src/routes/authRoutes");
+const createAIRouter = require("./src/routes/aiRoutes");
 const { createHttpError, errorHandler } = require("./src/utils/httpError");
 
 const app = express();
@@ -53,6 +55,8 @@ app.get("/api/v1/health", async (req, res) => {
 });
 
 app.use("/api/v1", productRoutes);
+app.use("/api/v1/auth", createAuthRouter({ pool, env: process.env }));
+app.use("/api/v1/ai", createAIRouter({ pool, env: process.env }));
 
 app.use("/api/v1", (req, res, next) => {
   next(createHttpError(404, "ENDPOINT_NOT_FOUND", "The requested API endpoint was not found."));

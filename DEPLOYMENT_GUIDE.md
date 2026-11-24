@@ -1,6 +1,6 @@
 # Neon, GitHub, and Render Deployment
 
-The frontend is at the repository root; the Express API is in `backend/`. The project is prepared for two Render services and a Neon PostgreSQL database. It has not been pushed or deployed.
+The frontend is at the repository root; the Express API is in `backend/`. The API is already deployed as directed by the project owner. This guide covers preparing changes for the existing Render services; no migration, push, or deployment is performed automatically.
 
 ## 1. Create and configure Neon
 
@@ -17,7 +17,7 @@ The frontend is at the repository root; the Express API is in `backend/`. The pr
    npm run db:migrate
    ```
 
-The migration is repeatable and creates only the products schema plus a migration ledger. It does not seed or copy product rows. If the previous database contains records to retain, export/import those rows into Neon and compare counts before switching the application. Do not delete the old database before verifying the transfer.
+The migration runner applies numbered migrations once. The existing products migration and product rows are preserved; the new authentication migration only adds users and session tables. Migrations do not seed, copy, or delete product rows.
 
 ## 2. Verify locally
 
@@ -37,6 +37,8 @@ npm run build
 ```
 
 Verify `GET /api/v1/health` and `GET /api/v1/products`. The local Vite proxy forwards `/api` to `http://localhost:5000`. The backend must use the Neon URL in `backend/.env`; no Neon credentials are included in this repository.
+
+Run backend route tests from `backend/` with `npm test`. These use an isolated in-memory test store and do not write test accounts to Neon.
 
 ## 3. Prepare GitHub
 
@@ -63,19 +65,23 @@ git init -b main
 git remote add origin https://github.com/Micaella159/GlowCart.git
 ```
 
-## 4. Deploy the Render Blueprint
+## 4. Update the existing Render services
 
-1. Push the project to GitHub only after reviewing the staged files and approving the push.
-2. In Render, choose **New → Blueprint** and connect the repository containing `render.yaml`.
+1. Do not create duplicate Render services. Open the existing API and static-site services (or their existing Blueprint) and confirm they use the intended repository and branch.
+2. Push the reviewed changes to GitHub only when ready. Render may automatically deploy a push depending on the service's auto-deploy setting.
 3. Confirm the services:
    - `glowcart-api`: Node web service, root `backend`, build `npm ci`, start `npm start`, health path `/api/v1/health`.
    - `glowcart-web`: static site, repository root, build `npm ci && npm run build`, publish directory `dist`, SPA rewrite to `/index.html`.
-4. Render will prompt for unsynchronized environment variables. Set:
+4. In the API service environment, set or confirm:
    - API `DATABASE_URL`: the Neon pooled URL (secret; leave `sslmode=require`).
    - API `FRONTEND_URL`: the exact HTTPS origin Render assigns to the static site.
-   - Frontend `VITE_API_BASE_URL` is configured in `render.yaml` as `https://glowcart-api-slg5.onrender.com/api/v1`; confirm the static site's Render environment uses this value.
-5. Deploy/redeploy after setting the variables. Do not use example or guessed Render hostnames; copy the real service URLs from the Render dashboard.
-6. In the API service's **Shell**, run `npm run db:migrate` once after `DATABASE_URL` is set. This creates the products table before catalog requests are tested.
+   - API `AUTH_TOKEN_SECRET`: a newly generated random secret of at least 32 characters. Keep it only in Render's backend environment.
+   - API `OPENAI_API_KEY`: an OpenAI API key stored only in the backend environment. Beauty AI returns a clear configuration error until this is set.
+   - API `AUTH_SESSION_TTL_HOURS`: optional; defaults to `168`.
+   - API `OPENAI_MODEL`: optional; defaults to `gpt-4o-mini`.
+5. In the static site's build environment, set or confirm `VITE_API_BASE_URL=https://glowcart-api-slg5.onrender.com/api/v1`. It is public configuration, not a secret.
+6. After the updated API code is deployed, run `npm run db:migrate` in the API service's **Shell**. Review the migration first; it adds `users` and `auth_sessions` only and does not change product rows.
+7. Redeploy/rebuild the frontend after setting its build-time variable. Confirm the API health check and the actual service URLs in the Render dashboard; do not use guessed frontend hostnames.
 
 ## 5. Verify deployment
 
@@ -92,4 +98,4 @@ Check the browser network panel for a successful product request, verify a neste
 
 ## Current limitations
 
-The API currently supports health, product listing, and product detail only. Authentication, checkout/idempotency, payment, orders, and AI are not implemented. The Neon connection and data transfer require your Neon account and are not verified yet.
+The API supports health, product listing/detail, user sessions, and AI product discovery. Checkout/idempotency, payment, and orders are not implemented. Keep provider/authentication secrets on the backend, never in `VITE_*` variables.

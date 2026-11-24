@@ -61,6 +61,10 @@ Backend variables are documented in [`backend/.env.example`](./backend/.env.exam
 - `PORT`
 - `FRONTEND_URL`
 - `DATABASE_URL` (Neon pooled PostgreSQL URL; backend only)
+- `AUTH_TOKEN_SECRET` (backend-only random secret, at least 32 characters)
+- `AUTH_SESSION_TTL_HOURS` (optional; defaults to 168, maximum 720)
+- `OPENAI_API_KEY` (backend-only; optional until Beauty AI is enabled)
+- `OPENAI_MODEL` (optional; defaults to `gpt-4o-mini`)
 
 Frontend example: [`.env.example`](./.env.example). `VITE_API_BASE_URL` is public and must contain only the API base URL.
 
@@ -75,7 +79,7 @@ npm run lint
 npm run build
 ```
 
-There is no backend automated test suite yet. Apply the schema with `npm run db:migrate`; verify the database with `GET /api/v1/health` and the catalog with `GET /api/v1/products`.
+Run backend tests from `backend/` with `npm test`. Apply database schema changes with `npm run db:migrate`; this also creates authentication tables while preserving the existing products and records. Verify the database with `GET /api/v1/health` and the catalog with `GET /api/v1/products`.
 
 ## Render deployment
 

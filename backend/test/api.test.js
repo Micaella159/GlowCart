@@ -1,0 +1,314 @@
+const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
+const { once } = require("node:events");
+const express = require("express");
+const bcrypt = require("bcryptjs");
+const { test } = require("node:test");
+const createAuthRouter = require("../src/routes/authRoutes");
+const createAIRouter = require("../src/routes/aiRoutes");
+const { errorHandler } = require("../src/utils/httpError");
+
+const TEST_SECRET = "test-only-auth-secret-0123456789abcdef";
+const PRODUCT_ID = "10000000-0000-4000-8000-000000000001";
+
+function createFakePool(products = []) {
+  const users = new Map();
+  const sessions = new Map();
+
+  async function query(sql, values = []) {
+    if (sql.includes("FROM public.users") && sql.includes("WHERE lower(email) = $1")) {
+      const user = users.get(values[0]);
+      return { rows: user ? [user] : [], rowCount: user ? 1 : 0 };
+    }
+
+    if (sql.includes("FROM public.auth_sessions AS s")) {
+      const session = sessions.get(values[0]);
+      const user = session && session.expires_at > new Date()
+        ? [...users.values()].find((item) => item.id === session.user_id)
+        : null;
+      const row = user && session
+        ? { id: user.id, email: user.email, name: user.name, expires_at: session.expires_at }
+        : null;
+      return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
+    }
+
+    if (sql.includes("DELETE FROM public.auth_sessions")) {
+      const deleted = sessions.delete(values[0]);
+      return { rows: [], rowCount: deleted ? 1 : 0 };
+    }
+
+    if (sql.includes("INSERT INTO public.auth_sessions")) {
+      const [token_hash, user_id, expires_at] = values;
+      sessions.set(token_hash, { user_id, expires_at });
+      return { rows: [], rowCount: 1 };
+    }
+
+    if (sql.includes("FROM public.products") && sql.includes("id = ANY")) {
+      const ids = new Set(values[0].map((id) => id.toLowerCase()));
+      const rows = products.filter((item) => item.is_active && item.stock > 0
+        && ids.has(item.id.toLowerCase()));
+      return { rows, rowCount: rows.length };
+    }
+
+    if (sql.includes("FROM public.products") && sql.includes("ORDER BY created_at DESC")) {
+      const rows = products.filter((item) => item.is_active && item.stock > 0);
+      return { rows, rowCount: rows.length };
+    }
+
+    throw new Error(`Unexpected test query: ${sql}`);
+  }
+
+  return {
+    users,
+    sessions,
+    query,
+    async connect() {
+      let stagedUser;
+      let stagedSession;
+      return {
+        async query(sql, values = []) {
+          if (sql === "BEGIN") return { rows: [], rowCount: 0 };
+          if (sql === "COMMIT") {
+            if (stagedUser) users.set(stagedUser.email, stagedUser);
+            if (stagedSession) sessions.set(stagedSession.token_hash, stagedSession);
+            return { rows: [], rowCount: 0 };
+          }
+          if (sql === "ROLLBACK") {
+            stagedUser = null;
+            stagedSession = null;
+            return { rows: [], rowCount: 0 };
+          }
+          if (sql.includes("INSERT INTO public.users")) {
+            const [name, email, password_hash] = values;
+            if (users.has(email)) {
+              const error = new Error("duplicate key");
+              error.code = "23505";
+              throw error;
+            }
+            stagedUser = { id: crypto.randomUUID(), name, email, password_hash };
+            return {
+              rows: [{ id: stagedUser.id, name, email }],
+              rowCount: 1,
+            };
+          }
+          if (sql.includes("INSERT INTO public.auth_sessions")) {
+            const [token_hash, user_id, expires_at] = values;
+            stagedSession = { token_hash, user_id, expires_at };
+            return { rows: [], rowCount: 1 };
+          }
+          throw new Error(`Unexpected transaction query: ${sql}`);
+        },
+        release() {},
+      };
+    },
+  };
+}
+
+async function startTestServer({ pool, env, fetchImpl }) {
+  const app = express();
+  app.use((req, res, next) => {
+    req.requestId = crypto.randomUUID();
+    next();
+  });
+  app.use(express.json());
+  app.use("/api/v1/auth", createAuthRouter({ pool, env }));
+  app.use("/api/v1/ai", createAIRouter({ pool, env, fetchImpl }));
+  app.use(errorHandler);
+
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  return {
+    baseUrl: `http://127.0.0.1:${server.address().port}/api/v1`,
+    close: () => new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    }),
+  };
+}
+
+async function postJson(url, body, token) {
+  return fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+test("auth registration, duplicate protection, login, me, and logout", async (t) => {
+  const pool = createFakePool();
+  const server = await startTestServer({
+    pool,
+    env: { AUTH_TOKEN_SECRET: TEST_SECRET, AUTH_SESSION_TTL_HOURS: "2" },
+  });
+  t.after(server.close);
+
+  const invalid = await postJson(`${server.baseUrl}/auth/register`, {
+    name: "Test User",
+    email: "not-an-email",
+    password: "valid-password",
+  });
+  assert.equal(invalid.status, 400);
+
+  const registration = await postJson(`${server.baseUrl}/auth/register`, {
+    name: "Test User",
+    email: "Test@example.com",
+    password: "correct-horse-battery",
+  });
+  assert.equal(registration.status, 201);
+  const registered = await registration.json();
+  assert.equal(registered.success, true);
+  assert.equal(registered.data.user.email, "test@example.com");
+  assert.ok(registered.data.token);
+  assert.equal(registered.data.user.password_hash, undefined);
+  assert.notEqual(pool.users.get("test@example.com").password_hash, "correct-horse-battery");
+  assert.equal(pool.sessions.has(registered.data.token), false);
+  assert.equal(await bcrypt.compare(
+    "correct-horse-battery",
+    pool.users.get("test@example.com").password_hash,
+  ), true);
+
+  const duplicate = await postJson(`${server.baseUrl}/auth/register`, {
+    name: "Test User",
+    email: "TEST@example.com",
+    password: "another-password",
+  });
+  assert.equal(duplicate.status, 409);
+
+  const wrongPassword = await postJson(`${server.baseUrl}/auth/login`, {
+    email: "test@example.com",
+    password: "incorrect-password",
+  });
+  assert.equal(wrongPassword.status, 401);
+
+  const login = await postJson(`${server.baseUrl}/auth/login`, {
+    email: "TEST@example.com",
+    password: "correct-horse-battery",
+  });
+  assert.equal(login.status, 200);
+  const loggedIn = await login.json();
+
+  const unauthenticated = await fetch(`${server.baseUrl}/auth/me`);
+  assert.equal(unauthenticated.status, 401);
+  const unauthenticatedLogout = await postJson(`${server.baseUrl}/auth/logout`, {});
+  assert.equal(unauthenticatedLogout.status, 401);
+
+  const me = await fetch(`${server.baseUrl}/auth/me`, {
+    headers: { Authorization: `Bearer ${loggedIn.data.token}` },
+  });
+  assert.equal(me.status, 200);
+  assert.equal((await me.json()).data.user.email, "test@example.com");
+
+  const logout = await postJson(`${server.baseUrl}/auth/logout`, {}, loggedIn.data.token);
+  assert.equal(logout.status, 200);
+  assert.equal((await logout.json()).data.loggedOut, true);
+
+  const revoked = await fetch(`${server.baseUrl}/auth/me`, {
+    headers: { Authorization: `Bearer ${loggedIn.data.token}` },
+  });
+  assert.equal(revoked.status, 401);
+});
+
+test("AI discovery handles missing credentials, invalid prompts, and database-verified recommendations", async (t) => {
+  const product = {
+    id: PRODUCT_ID,
+    name: "Daily Moisturizer",
+    description: "Light moisturizer for daily use.",
+    price: "349.00",
+    imageUrl: "/products/moisturizer.jpg",
+    category: "Skincare",
+    stock: 12,
+    is_active: true,
+  };
+  const pool = createFakePool([product]);
+  let providerCalls = 0;
+  const fetchImpl = async (url, options) => {
+    providerCalls += 1;
+    assert.equal(url, "https://api.openai.com/v1/chat/completions");
+    assert.equal(options.headers.Authorization, "Bearer test-provider-key");
+    const request = JSON.parse(options.body);
+    const userMessage = JSON.parse(request.messages[1].content);
+    assert.equal(userMessage.catalog[0].price, product.price);
+    return {
+      ok: true,
+      async json() {
+        return {
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                recommendations: [{
+                  id: PRODUCT_ID,
+                  reason: "This moisturizer fits the stated daily skincare goal.",
+                  price: "0.01",
+                  stock: 9999,
+                }],
+              }),
+            },
+          }],
+        };
+      },
+    };
+  };
+
+  const missingKeyServer = await startTestServer({ pool, env: {}, fetchImpl });
+  t.after(missingKeyServer.close);
+  const missingKey = await postJson(`${missingKeyServer.baseUrl}/ai/discovery`, {
+    prompt: "A gentle moisturizer",
+  });
+  assert.equal(missingKey.status, 503);
+  assert.equal((await missingKey.json()).error.code, "AI_NOT_CONFIGURED");
+  assert.equal(providerCalls, 0);
+
+  const server = await startTestServer({
+    pool,
+    env: { OPENAI_API_KEY: "test-provider-key", OPENAI_MODEL: "test-model" },
+    fetchImpl,
+  });
+  t.after(server.close);
+
+  const invalidPrompt = await postJson(`${server.baseUrl}/ai/discovery`, { prompt: "no" });
+  assert.equal(invalidPrompt.status, 400);
+  const invalidLimit = await postJson(`${server.baseUrl}/ai/discovery`, {
+    prompt: "A gentle moisturizer for dry skin",
+    limit: "3",
+  });
+  assert.equal(invalidLimit.status, 400);
+
+  const response = await postJson(`${server.baseUrl}/ai/discovery`, {
+    prompt: "A gentle moisturizer for dry skin",
+    limit: 3,
+  });
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.meta.count, 1);
+  assert.equal(result.data.recommendations[0].product.price, "349.00");
+  assert.equal(result.data.recommendations[0].product.stock, 12);
+  assert.equal(result.data.recommendations[0].product.id, PRODUCT_ID);
+  assert.equal(result.data.recommendations[0].price, undefined);
+  assert.equal(providerCalls, 1);
+});
+
+test("AI discovery returns a safe error when the provider fails", async (t) => {
+  const server = await startTestServer({
+    pool: createFakePool([{
+      id: PRODUCT_ID,
+      name: "Daily Moisturizer",
+      description: "",
+      price: "349.00",
+      imageUrl: null,
+      category: "Skincare",
+      stock: 12,
+      is_active: true,
+    }]),
+    env: { OPENAI_API_KEY: "test-provider-key" },
+    fetchImpl: async () => ({ ok: false, status: 429 }),
+  });
+  t.after(server.close);
+
+  const response = await postJson(`${server.baseUrl}/ai/discovery`, {
+    prompt: "A gentle moisturizer for dry skin",
+  });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error.code, "AI_PROVIDER_UNAVAILABLE");
+});

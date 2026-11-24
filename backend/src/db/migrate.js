@@ -2,8 +2,7 @@ const fs = require("fs/promises");
 const path = require("path");
 const pool = require("../config/db");
 
-const migrationVersion = "001_create_products";
-const migrationPath = path.join(__dirname, "migrations", `${migrationVersion}.sql`);
+const migrationsDirectory = path.join(__dirname, "migrations");
 
 async function migrate() {
   const client = await pool.connect();
@@ -18,21 +17,33 @@ async function migrate() {
       )
     `);
 
-    const applied = await client.query(
-      "SELECT 1 FROM public.schema_migrations WHERE version = $1",
-      [migrationVersion],
-    );
+    const migrationFiles = (await fs.readdir(migrationsDirectory))
+      .filter((file) => /^\d+_[a-z0-9_]+\.sql$/i.test(file))
+      .sort();
 
-    if (applied.rowCount === 0) {
-      const migration = await fs.readFile(migrationPath, "utf8");
+    if (migrationFiles.length === 0) {
+      throw new Error("No database migration files were found.");
+    }
+
+    for (const file of migrationFiles) {
+      const version = path.basename(file, ".sql");
+      const applied = await client.query(
+        "SELECT 1 FROM public.schema_migrations WHERE version = $1",
+        [version],
+      );
+
+      if (applied.rowCount > 0) {
+        console.log(`Database migration ${version} is already applied.`);
+        continue;
+      }
+
+      const migration = await fs.readFile(path.join(migrationsDirectory, file), "utf8");
       await client.query(migration);
       await client.query(
         "INSERT INTO public.schema_migrations (version) VALUES ($1)",
-        [migrationVersion],
+        [version],
       );
-      console.log(`Applied database migration ${migrationVersion}.`);
-    } else {
-      console.log(`Database migration ${migrationVersion} is already applied.`);
+      console.log(`Applied database migration ${version}.`);
     }
 
     await client.query("COMMIT");

@@ -13,6 +13,14 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
+      - key: AUTH_TOKEN_SECRET
+        sync: false
+      - key: AUTH_SESSION_TTL_HOURS
+        value: "168"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
 
   - type: web
     name: glowcart-web

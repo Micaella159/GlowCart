@@ -68,11 +68,6 @@ export async function request(path, options = {}) {
     throw new ApiError('The server returned an empty response instead of JSON.', response.status, 'EMPTY_RESPONSE')
   }
 
-  if (response.status === 401) {
-    localStorage.removeItem('glowcart-token')
-    if (window.location.pathname !== '/login') window.location.assign('/login')
-  }
-
   if (response.ok && (!payload || typeof payload !== 'object' || Array.isArray(payload))) {
     throw new ApiError('The server returned JSON in an unexpected format.', response.status, 'INVALID_RESPONSE')
   }

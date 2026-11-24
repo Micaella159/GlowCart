@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import AppLayout from './components/AppLayout.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
 import { CartProvider } from './context/CartContext.jsx'
@@ -11,6 +11,9 @@ const HomePage = lazy(() => import('./pages/HomePage.jsx'))
 const ProductsPage = lazy(() => import('./pages/ProductsPage.jsx'))
 const DetailPage = lazy(() => import('./pages/DetailPage.jsx'))
 const CartPage = lazy(() => import('./pages/CartPage.jsx'))
+const LoginPage = lazy(() => import('./pages/LoginPage.jsx'))
+const RegisterPage = lazy(() => import('./pages/RegisterPage.jsx'))
+const BeautyAIPage = lazy(() => import('./pages/BeautyAIPage.jsx'))
 const UnavailablePage = lazy(() => import('./pages/UnavailablePage.jsx'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage.jsx'))
 
@@ -19,8 +22,10 @@ function PageFallback() {
 }
 
 function ProtectedRoute({ role }) {
-  const { isAuthenticated, user } = useAuth()
-  if (!isAuthenticated) return <Navigate to="/login" replace />
+  const { isAuthenticated, isReady, user } = useAuth()
+  const location = useLocation()
+  if (!isReady) return <PageFallback />
+  if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location }} />
   if (role && user?.role !== role) {
     return <section className="error-message" role="alert">You do not have permission to access this page.</section>
   }
@@ -44,11 +49,11 @@ function AppRoutes() {
               <Route path="orders" element={<UnavailablePage kind="orders" />} />
               <Route path="orders/:id" element={<UnavailablePage kind="orders" />} />
             </Route>
-            <Route path="login" element={<UnavailablePage kind="login" />} />
-            <Route path="register" element={<UnavailablePage kind="register" />} />
-            <Route path="ai-assistant" element={<UnavailablePage kind="assistant" />} />
+            <Route path="login" element={<LoginPage />} />
+            <Route path="register" element={<RegisterPage />} />
+            <Route path="ai-assistant" element={<BeautyAIPage />} />
             <Route element={<ProtectedRoute role="admin" />}>
-              <Route path="admin/*" element={<UnavailablePage kind="login" />} />
+              <Route path="admin/*" element={<UnavailablePage kind="admin" />} />
             </Route>
             <Route path="*" element={<NotFoundPage />} />
           </Route>
