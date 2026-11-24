@@ -21,10 +21,20 @@ export async function request(path, options = {}) {
   const token = localStorage.getItem('glowcart-token')
   if (token) headers.set('Authorization', `Bearer ${token}`)
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-  })
+  let response
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+    })
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error
+    throw new ApiError(
+      'GlowCart could not reach the server. Check your connection and try again.',
+      0,
+      'API_UNAVAILABLE'
+    )
+  }
 
   let payload
   try {

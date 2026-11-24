@@ -1,26 +1,72 @@
 # GlowCart
 
-GlowCart is a React + Vite beauty-shopping PWA with an Express API backed by Supabase PostgreSQL.
+GlowCart is a mobile-first React/Vite beauty-shopping PWA. Its browser app talks to an Express REST API, and only the API connects to Neon PostgreSQL.
 
-## Run locally
+## Features
 
-1. Copy `backend/.env.example` to `backend/.env` and set `DATABASE_URL` to the Supabase PostgreSQL connection string. Never commit this file.
-2. Install and start the API:
+- Product catalog with search, category filters, product details, local product-image fallbacks, and loading/error/empty states.
+- Shopping cart saved in browser storage, with quantity updates and item removal. The subtotal is an estimate; there is no server-side checkout.
+- Responsive navigation, online/offline indicator, web app manifest, icons, and Workbox caching for the app shell, public product responses, and images.
+- Express endpoints for API health, product listing, and product lookup.
 
-   ```powershell
-   cd backend
-   npm ci
-   npm run dev
-   ```
+Login, registration, orders, checkout/payment, and AI discovery are not implemented. Their routes explain the limitation and do not simulate successful transactions.
 
-3. In a second terminal, start the frontend:
+## Technologies and structure
 
-   ```powershell
-   npm ci
-   npm run dev
-   ```
+- Frontend: React, Vite, React Router, CSS, `vite-plugin-pwa`.
+- Backend: Node.js, Express, `pg`.
+- Database: Neon PostgreSQL.
 
-   Vite proxies `/api` to `http://localhost:5000`. The API should respond at `/api/v1/health` and `/api/v1/products`.
+```text
+src/                         React app, pages, contexts, API client
+public/                      Manifest, icons, offline page, product photos
+backend/server.js            Express entry point
+backend/src/config/db.js     PostgreSQL pool and TLS settings
+backend/src/routes/          REST routes
+backend/src/db/migrations/   Versioned SQL schema
+backend/src/db/seeds/        Separate, reviewable product seed SQL
+render.yaml                  Render Blueprint for static frontend + API
+```
+
+## Local setup
+
+Create a Neon project and copy its pooled PostgreSQL connection string from the Neon Console. Keep its `sslmode=require` option. Add it directly to `backend/.env`; never paste it into source files, frontend environment variables, or chat. Do not overwrite an existing `.env` until you have safely exported any database records you intend to retain.
+
+```powershell
+Set-Location backend
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+npm ci
+npm run db:migrate
+npm run dev
+```
+
+In another terminal at the project root:
+
+```powershell
+npm ci
+npm run dev
+```
+
+The local Vite proxy forwards `/api` to `http://localhost:5000`. The frontend defaults to `/api/v1`; set `VITE_API_BASE_URL` in a local frontend `.env.local` only when using a different API origin. Never put `DATABASE_URL` in a `VITE_*` variable.
+
+The migration creates the products table and migration ledger but does not insert, copy, or delete product records. If moving existing records, export/import and verify them separately before switching over. Keep the old database until the transfer is checked.
+
+The optional product seed is separate from schema migrations at `backend/src/db/seeds/001_products.sql`. Review it before running; its IDs make repeated execution skip those same rows.
+
+## Configuration
+
+Backend variables are documented in [`backend/.env.example`](./backend/.env.example):
+
+- `NODE_ENV`
+- `PORT`
+- `FRONTEND_URL`
+- `DATABASE_URL` (Neon pooled PostgreSQL URL; backend only)
+
+Frontend example: [`.env.example`](./.env.example). `VITE_API_BASE_URL` is public and must contain only the API base URL.
+
+## API
+
+The API is rooted at `/api/v1`. See [`API_DOCUMENTATION.md`](./API_DOCUMENTATION.md) for request/response examples and error codes.
 
 ## Checks
 
@@ -29,25 +75,18 @@ npm run lint
 npm run build
 ```
 
-The current backend serves the product catalog. Login, orders, checkout/payment, and AI routes are not implemented yet; frontend routes explain their unavailable status rather than faking success.
+There is no backend automated test suite yet. Apply the schema with `npm run db:migrate`; verify the database with `GET /api/v1/health` and the catalog with `GET /api/v1/products`.
 
-## Render deploy
+## Render deployment
 
-The root `render.yaml` defines two Render services: `glowcart-api` (Node web service, rooted at `backend`) and `glowcart-web` (static site). Push this repository to GitHub, then in Render choose **New → Blueprint** and select the repository containing `render.yaml`.
+[`render.yaml`](./render.yaml) defines a Node API service rooted at `backend/` and a static frontend rooted at the repository root. After connecting the repository to Render, provide:
 
-During Blueprint setup, provide `DATABASE_URL` as a secret for the API service. It must be the Supabase Postgres connection string, not a Supabase `service_role` key. The frontend API URL and backend CORS origin in `render.yaml` assume the default service domains:
+- `DATABASE_URL` on the API service: Neon pooled connection string.
+- `FRONTEND_URL` on the API service: the exact frontend origin assigned by Render.
+- `VITE_API_BASE_URL` on the static site: `https://<actual-api-host>/api/v1`.
 
-- `https://glowcart-api.onrender.com`
-- `https://glowcart-web.onrender.com`
+The last two URLs are prompted as unsynchronized Blueprint variables; use the actual URLs shown in Render. Do not put database credentials in the frontend. Follow [`DEPLOYMENT_GUIDE.md`](./DEPLOYMENT_GUIDE.md) for deployment steps. No GitHub push or Render deployment has been performed by this project setup.
 
-If Render assigns different URLs, update `VITE_API_BASE_URL` and `FRONTEND_URL` to match the actual service domains and redeploy both services. Do not put database credentials in frontend variables.
+## Git safety
 
-Render serves HTTPS automatically, and the static-site rewrite in the Blueprint supports client-side routes. Verify `/api/v1/health`, `/api/v1/products`, product images, and a direct refresh of a nested route after deployment.
-
-## PWA
-
-The manifest and PNG icons are in `public/`; Workbox precaches the app shell and caches product GET responses and images. Offline mode does not support checkout or payment. Confirm installation in Chrome DevTools → Application → Manifest and Service Workers.
-
-## GitHub safety
-
-The repository ignores `.env` files, dependencies, and build output. Before the first push, check `git status` and confirm neither `backend/.env` nor any credentials are staged. Keep `.env.example` files limited to placeholders.
+`.env`, dependencies, and build output are ignored. Check `git status` and confirm `backend/.env` is ignored and not tracked before committing. Keep example files limited to placeholders.

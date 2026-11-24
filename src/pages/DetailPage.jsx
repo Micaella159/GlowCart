@@ -1,6 +1,6 @@
 import { Link, useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { getProducts, getProductId, getProductImage, getProductName, getProductPrice } from '../api/products.js'
+import { getProduct, getProductImage, getProductName, getProductPrice } from '../api/products.js'
 import { useCart } from '../hooks/useCart.js'
 
 export default function DetailPage() {
@@ -12,8 +12,8 @@ export default function DetailPage() {
 
   useEffect(() => {
     const controller = new AbortController()
-    getProducts({ signal: controller.signal })
-      .then(products => setProduct(products.find(item => String(getProductId(item)) === id) || null))
+    getProduct(id, { signal: controller.signal })
+      .then(setProduct)
       .catch(reason => {
         if (reason.name !== 'AbortError') setError(reason.message)
       })

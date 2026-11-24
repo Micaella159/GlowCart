@@ -634,8 +634,8 @@ button {
 
 .nav-item {
   position: relative;
-  min-width: 44px;
-  min-height: 44px;
+  min-width: 45px;
+  min-height: 45px;
   justify-content: center;
   padding: 2px 4px;
   text-decoration: none;

@@ -26,6 +26,18 @@ export async function getProducts({ signal } = {}) {
   return products
 }
 
+export async function getProduct(id, { signal } = {}) {
+  const response = await request(`/products/${encodeURIComponent(id)}`, { signal })
+  const product = response.data?.product ?? response.data
+
+  if (!product || typeof product !== 'object'
+    || (product.id == null && product._id == null)) {
+    throw new Error('The product API returned an unexpected response format.')
+  }
+
+  return product
+}
+
 export function getProductId(product) {
   return product.id ?? product._id
 }

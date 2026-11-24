@@ -26,7 +26,8 @@ export default defineConfig({
         runtimeCaching: [
           {
             urlPattern: ({ url, request }) =>
-              request.method === 'GET' && url.pathname === '/api/v1/products',
+              request.method === 'GET'
+              && /^\/api\/v1\/products(?:\/[0-9a-f-]+)?$/i.test(url.pathname),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'glowcart-products',
